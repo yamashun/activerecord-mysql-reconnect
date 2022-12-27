@@ -1,5 +1,5 @@
 module Activerecord::Mysql::Reconnect::ExecuteWithReconnect
-  def execute(sql, name = nil)
+  def raw_execute(sql, name = nil, async: false)
     retryable(sql, name) do |sql_names|
       retval = nil
 
