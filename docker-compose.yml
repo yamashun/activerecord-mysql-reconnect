@@ -2,7 +2,7 @@
 version: '3.6'
 services:
   mysql:
-    platform: linux/arm64/v8
+    platform: ${PLATFORM}
     image: mysql:8
     ports:
       - "14407:3306"
