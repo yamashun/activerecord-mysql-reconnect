@@ -19,3 +19,4 @@ test.rb
 *.bak
 *.swp
 /gemfiles/*.lock
+.ruby-version

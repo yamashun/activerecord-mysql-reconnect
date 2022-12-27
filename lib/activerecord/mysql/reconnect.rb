@@ -26,6 +26,7 @@ module Activerecord::Mysql::Reconnect
 
   HANDLE_ERROR = [
     ActiveRecord::StatementInvalid,
+    ActiveRecord::ConnectionNotEstablished,
     Mysql2::Error,
   ]
 
@@ -34,6 +35,7 @@ module Activerecord::Mysql::Reconnect
   }
 
   @@handle_rw_error_messages = {
+    hostname_error: 'There is an issue connecting with your hostname',
     gone_away: 'MySQL server has gone away',
     server_shutdown: 'Server shutdown in progress',
     closed_connection: 'closed MySQL connection',

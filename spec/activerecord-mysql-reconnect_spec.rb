@@ -57,10 +57,11 @@ describe 'activerecord-mysql-reconnect' do
     end
   end
 
-  context 'wehn select on other thread' do
+  context 'when select on other thread' do
     specify do
       th = thread_start {
-        expect(Employee.where(:id => 1).pluck('sleep(10) * 0 + 3')).to eq [3]
+        result = ActiveRecord::Base.connection.execute("select SLEEP(10) * 0 + 3 from employees where id = 1")
+        expect(result.first).to eq [3]
       }
 
       MysqlServer.restart
@@ -84,7 +85,6 @@ describe 'activerecord-mysql-reconnect' do
           :last_name  => 'Tiger',
           :hire_date  => Time.now
         )
-
         expect(emp.id).to eq 1001
         expect(emp.emp_no).to eq 9999
       }
@@ -211,7 +211,9 @@ describe 'activerecord-mysql-reconnect' do
 
         expect(emp.id).to eq 1001
         expect(emp.emp_no).to eq 9999
+        expect(Employee.all.count).to eq 1001
 
+        # NOTE: restartでcommit前のinsertが無視される?
         MysqlServer.restart
 
         emp = Employee.create(
@@ -221,9 +223,7 @@ describe 'activerecord-mysql-reconnect' do
           :last_name  => 'Tiger',
           :hire_date  => Time.now
         )
-
-        # NOTE: Ignore the transaction on :rw mode
-        expect(emp.id).to eq 1001
+        expect(Employee.all.count).to eq 1001
         expect(emp.emp_no).to eq 9998
       end
 
@@ -452,7 +452,15 @@ describe 'activerecord-mysql-reconnect' do
     end
 
     let(:mysql_error) do
-      Mysql2::Error.const_defined?(:ConnectionError) ? Mysql2::Error::ConnectionError : Mysql2::Error
+      Mysql2::Error::ConnectionError
+    end
+
+    let(:connection_error_message) do
+        # @see: https://github.com/rails/rails/blob/1beb0ff2061f7f61e7f0c3773d35b87835df7d9f/activerecord/lib/active_record/errors.rb#L76
+        <<~MSG
+          There is an issue connecting with your hostname: 127.0.0.1.\n
+          Please check your database configuration and ensure there is a valid connection to your database.
+        MSG
     end
 
     before do
@@ -461,29 +469,23 @@ describe 'activerecord-mysql-reconnect' do
 
     context "when retry failed " do
       specify do
-        if ActiveRecord::VERSION::MAJOR < 6
-          expect(ActiveRecord::Base.logger).to receive(:warn).with(warning_template % [
-            "MySQL server has gone away. Trying to reconnect in 0.5 seconds.",
-            "#{mysql_error}: Lost connection to MySQL server during query: SELECT `employees`.* FROM `employees` [ActiveRecord::StatementInvalid]",
-          ])
-        else
-          expect(ActiveRecord::Base.logger).to receive(:warn).with(warning_template % [
-            "MySQL server has gone away. Trying to reconnect in 0.5 seconds.",
-            "#{mysql_error}: Lost connection to MySQL server during query [ActiveRecord::StatementInvalid]",
-          ])
-        end
+        # 一度目はコネクションが存在するため
+        expect(ActiveRecord::Base.logger).to receive(:warn).with(warning_template % [
+          "MySQL server has gone away. Trying to reconnect in 0.5 seconds.",
+          "#{mysql_error}: Lost connection to MySQL server during query [ActiveRecord::StatementInvalid]",
+        ])
 
 
         (1.0..4.5).step(0.5).each do |sec|
           expect(ActiveRecord::Base.logger).to receive(:warn).with(warning_template % [
             "MySQL server has gone away. Trying to reconnect in #{sec} seconds.",
-            "Lost connection to MySQL server during query [#{mysql_error}]",
+            "#{connection_error_message} [ActiveRecord::DatabaseConnectionError]",
           ])
         end
 
         expect(ActiveRecord::Base.logger).to receive(:warn).with(warning_template % [
           "Query retry failed.",
-          "Lost connection to MySQL server during query [#{mysql_error}]",
+          "#{connection_error_message} [ActiveRecord::DatabaseConnectionError]",
         ])
 
         expect(Employee.all.length).to eq 1000
@@ -491,7 +493,7 @@ describe 'activerecord-mysql-reconnect' do
 
         expect {
           Employee.all.length
-        }.to raise_error(mysql_error)
+        }.to raise_error(ActiveRecord::DatabaseConnectionError)
       end
     end
 
